@@ -1,0 +1,43 @@
+{
+  "summary": "「设置 › 网络与共享」新增 Microsoft 365 一节：一个开启/关闭的开关；开启后显示仅限本机的 HTTPS 网关地址、HTTPS 证书与「信任证书 / 移除信任」按钮、可复制的命名网关密钥（只显示掩码），以及为该集成自动加入的允许网页 https://pivot.claude.ai；相关文案已翻译（含简体中文）。",
+  "scenes": [
+    {
+      "title": "设置 › 网络与共享：Microsoft 365 HTTPS 网关",
+      "shots": [
+        {
+          "file": "01-m365-off.png",
+          "caption": "Microsoft 365 一节，开关处于关闭",
+          "width": 2168
+        },
+        {
+          "file": "02-m365-on.png",
+          "caption": "开启后的一节：网关地址、HTTPS 证书、网关密钥与允许的网页",
+          "width": 2168
+        },
+        {
+          "file": "03-m365-after-toggle.png",
+          "caption": "点击「开启」之后，「Microsoft 365」一节的显示",
+          "width": 2168
+        },
+        {
+          "file": "04-m365-on.png",
+          "caption": "点击「开启」后的 Microsoft 365 一节：网关地址、HTTPS 证书、网关密钥与允许的网页",
+          "width": 2168
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [
+    "设置 › 网络与共享：Microsoft 365 HTTPS 网关 · scroll : nothing visible matches #m365List (1 in the page)",
+    "设置 › 网络与共享：Microsoft 365 HTTPS 网关 · click #m365List button.text: nothing visible matches #m365List button.text with \"复制密钥\" (0 in the page)",
+    "设置 › 网络与共享：Microsoft 365 HTTPS 网关 · shot #status: nothing visible matches #status (1 in the page)"
+  ],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "描述说关闭集成“不会静默删除密钥或移除证书信任”，但 diff 里的关闭路径 setM365Off 会调用 gateway.RemoveM365Certificate，把 magpie 的本地 CA 从系统信任库删除；只有密钥确实被保留（可在网关密钥里再吊销）。描述里说的其余 UI（端点、证书信任、复制密钥、多语言文案）diff 都做了。",
+  "unseen": "沙盒是无声的 Linux 环境，看不到也无法演示：证书信任的安装/移除（只在 macOS 用户钥匙串与 Windows 用户 Root 存储上自动生效，按钮点了只会返回不支持的错误），以及 Word/Excel/PowerPoint 加载项真正从 https://pivot.claude.ai 经 https://127.0.0.1:8787 发起的凭据化 CORS/PNA 预检与请求。页面只能看到证书行与按钮本身。另外该开关只在当前 magpie 进程正在提供网关时可开启，若沙盒里未接管网关，点开后只会看到报错。",
+  "interactive": true,
+  "pages": 1
+}
