@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/appdir"
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/plugin"
 	"github.com/yetone/magpie/internal/settings"
@@ -915,7 +916,7 @@ func codexSubscriptionUsage(ctx context.Context, path string) SubscriptionQuota 
 		return q
 	}
 	q.Plan, q.Windows, q.Resets, q.Balance, q.Held, err = codexWindows(ctx, token, accountID)
-	if b, rerr := readAccountFile(path); rerr == nil {
+	if b, _, rerr := codexauth.Read(filepath.Dir(path)); rerr == nil {
 		q.Until = codexUntil(b, time.Now())
 	}
 	if err != nil {

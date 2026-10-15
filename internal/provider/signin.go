@@ -30,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/settings"
 )
@@ -1012,7 +1013,7 @@ func addLogin(l savedLogin) (using bool, err error) {
 	if using {
 		switch l.Agent {
 		case "codex":
-			err = writePrivate(codexAuthPath(), append(bytes.TrimSpace(l.Auth), '\n'))
+			err = codexauth.Save(codexHome(), l.Auth)
 		case "claude":
 			err = putClaudeLogin(l)
 		}

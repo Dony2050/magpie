@@ -18,6 +18,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/codexcat"
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/gateway"
@@ -1776,19 +1777,7 @@ func CodexOwnOnly() bool {
 // its built-in provider then runs and asks for the model list at
 // openai_base_url. Signed in with an API key alone, it asks for none.
 func codexChatGPT(dir string) bool {
-	if settings.AccountDiscoveryOff() {
-		return false
-	}
-	var a struct {
-		Tokens struct {
-			Access string `json:"access_token"`
-		} `json:"tokens"`
-	}
-	b, err := os.ReadFile(filepath.Join(dir, "auth.json"))
-	if err != nil || json.Unmarshal(b, &a) != nil {
-		return false
-	}
-	return a.Tokens.Access != ""
+	return codexauth.ChatGPT(dir)
 }
 
 // codexReached reads Codex's newest model request since a time — the

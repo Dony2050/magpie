@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/appdir"
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/filelock"
 	"github.com/yetone/magpie/internal/filememo"
@@ -527,7 +528,7 @@ func codexAuthPath() string { return filepath.Join(appdir.CodexHome(), "auth.jso
 // sign-in is a key's, and spends no account a gateway key's list
 // governs.
 func CodexAPIKeySignedIn() bool {
-	b, err := readAccountFile(codexAuthPath())
+	b, _, err := codexauth.Read(codexHome())
 	if err != nil {
 		return false
 	}
@@ -616,7 +617,7 @@ func savedButSignedOut() []Exclusion {
 		if _, ok := liveLogin(a); ok {
 			continue
 		}
-		why, signIn := "nothing at "+codexAuthPath(), "codex login"
+		why, signIn := codexauth.Description(codexHome()), "codex login"
 		n := "1 account is"
 		if saved[a] > 1 {
 			n = fmt.Sprintf("%d accounts are", saved[a])
@@ -634,7 +635,7 @@ func liveLogin(agent string) (savedLogin, bool) {
 	}
 	switch agent {
 	case "codex":
-		b, err := readAccountFile(codexAuthPath())
+		b, _, err := codexauth.Read(codexHome())
 		if err != nil {
 			return savedLogin{}, false
 		}
@@ -1134,7 +1135,7 @@ func switchSavedLogin(agent, user string) (from string, _ error) {
 	var err error
 	switch agent {
 	case "codex":
-		err = writePrivate(codexAuthPath(), append(bytes.TrimSpace(want.Auth), '\n'))
+		err = codexauth.Save(codexHome(), want.Auth)
 	case "claude":
 		if err = putClaudeLogin(want); err == nil {
 			// Claude Code's own now: its only holder
@@ -1289,8 +1290,8 @@ func forgetLogin(agent, user string) (signedOut bool, err error) {
 		if agent != "codex" || other {
 			return false, &SignedInError{Agent: agent, User: user}
 		}
-		// as `codex logout` does: the sign-in's file goes, all of it
-		if err := os.Remove(codexAuthPath()); err != nil && !os.IsNotExist(err) {
+		// As `codex logout` does: remove the selected store and its file fallback.
+		if err := codexauth.Delete(codexHome()); err != nil {
 			return false, err
 		}
 		signedOut = true

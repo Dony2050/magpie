@@ -35,6 +35,7 @@ import (
 	"github.com/yetone/magpie/internal/appdir"
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/claudecode"
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/plugin"
 	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/settings"
@@ -972,7 +973,7 @@ func codexAccount(home string) (Provider, bool) {
 		return Provider{}, false
 	}
 	path := filepath.Join(appdir.CodexHomeIn(home), "auth.json")
-	b, err := readAccountFile(path)
+	b, _, err := codexauth.Read(filepath.Dir(path))
 	var a codexAuth
 	if err != nil || json.Unmarshal(b, &a) != nil || a.Tokens.AccessToken == "" || a.AuthMode == "apikey" {
 		return Provider{}, false
@@ -1005,12 +1006,13 @@ func codexAccount(home string) (Provider, bool) {
 
 // codexToken returns a usable access token, refreshing it through OpenAI
 // when it is about to expire. A refresh rotates the tokens, so the new
-// ones go back into auth.json for Codex CLI to find.
+// ones go back to the selected credential store for Codex CLI to find.
 func codexToken(ctx context.Context, path string) (tok, accountID string, err error) {
 	codexMu.Lock()
 	defer codexMu.Unlock()
 	var a codexAuth
-	if !readJSON(path, &a) || a.Tokens.AccessToken == "" {
+	b, loc, readErr := codexauth.Read(filepath.Dir(path))
+	if readErr != nil || json.Unmarshal(b, &a) != nil || a.Tokens.AccessToken == "" {
 		return "", "", errors.New("Codex is signed out; run codex login")
 	}
 	accountID = a.Tokens.AccountID
@@ -1021,22 +1023,19 @@ func codexToken(ctx context.Context, path string) (tok, accountID string, err er
 		return a.Tokens.AccessToken, accountID, nil
 	}
 	var raw map[string]any
-	if !readJSON(path, &raw) {
+	if json.Unmarshal(b, &raw) != nil {
 		return "", "", errors.New("Codex is signed out; run codex login")
 	}
 	tok, err = codexRefresh(ctx, raw)
 	if err != nil {
 		return "", "", err
 	}
-	// keep every other field of the file as Codex CLI wrote it. The file
-	// is the user's own sign-in, which Codex CLI and the Codex app read:
-	// written beside it, flushed and renamed in, never truncated in place,
-	// so a machine going down mid-write leaves the old one whole and a
-	// file held for a moment on Windows is waited out (#2239, #1505). A
-	// write that still fails loses the rotation, said in the log; the
-	// fresh access token in hand still serves this request.
+	// Keep every other field and write back to the store read above. File
+	// writes are flushed then renamed; Keychain rotations create no file
+	// copy that Codex ignores. A failed save is logged, while the fresh
+	// access token can still serve this request.
 	if out, err := json.MarshalIndent(raw, "", "  "); err == nil {
-		if werr := writePrivate(path, append(out, '\n')); werr != nil {
+		if werr := loc.Write(out); werr != nil {
 			log.Printf("codex: the refreshed sign-in didn't reach %s: %v", path, werr)
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/settings"
 )
 
@@ -492,7 +493,7 @@ func loginReadingKnown(l Login) (loginUsageEntry, bool) {
 // file Codex is signed in with, or the one kept for it.
 func codexLoginAuth(l Login) []byte {
 	if l.Active {
-		b, _ := readAccountFile(codexAuthPath())
+		b, _, _ := codexauth.Read(codexHome())
 		return b
 	}
 	loginsMu.Lock()

@@ -1,7 +1,7 @@
 package provider
 
-// Local identities for associating historical session metadata. No credential
-// refresh, sign-in discovery command or login-store write is needed here.
+// Local identities for associating historical session metadata. Reading the
+// current login can query Keychain, but never refreshes or writes credentials.
 import (
 	"cmp"
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/filememo"
 	"github.com/yetone/magpie/internal/settings"
 )
@@ -112,7 +113,9 @@ func currentSessionIdentities(codexDir string) []SessionIdentity {
 		return nil
 	}
 	var out []SessionIdentity
-	// Cache only the identity parse, not another copy of the credential blob.
+	// Recorded IDs may belong to a login kept in auth.json before the
+	// configured store changed. Its identity remains evidence for history
+	// even with a malformed current config; it never authorizes a request.
 	current, _ := filememo.Read("session codex identity", filepath.Join(codexDir, "auth.json"), func(b []byte) ([]SessionIdentity, error) {
 		if id, ok := codexSessionIdentity(b); ok {
 			return []SessionIdentity{id}, nil
@@ -120,6 +123,11 @@ func currentSessionIdentities(codexDir string) []SessionIdentity {
 		return nil, nil
 	})
 	out = append(out, current...)
+	if b, _, err := codexauth.Read(codexDir); err == nil {
+		if id, ok := codexSessionIdentity(b); ok && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
 	if acct, ok := claudeProfileAccount(); ok {
 		b, _ := json.Marshal(acct)
 		if id, ok := claudeSessionIdentity(b); ok {

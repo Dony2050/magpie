@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yetone/magpie/internal/codexauth"
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/settings"
@@ -61,8 +62,13 @@ func (a *Agent) Source() string {
 		if codexChatGPT(dir) {
 			return "chatgpt"
 		}
-		if v, _ := edit.GetJSON(filepath.Join(dir, "auth.json"), "OPENAI_API_KEY"); v != "" {
-			return "key"
+		if b, _, err := codexauth.Read(dir); err == nil {
+			var auth struct {
+				Key string `json:"OPENAI_API_KEY"`
+			}
+			if json.Unmarshal(b, &auth) == nil && auth.Key != "" {
+				return "key"
+			}
 		}
 	case "opencode", "mimocode", "deveco":
 		// the providers in its config, and those signed in through it
