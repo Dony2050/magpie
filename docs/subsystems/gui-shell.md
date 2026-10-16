@@ -393,6 +393,24 @@ leaving suggested plugin cards in place so a click begun before the answer still
 opens the intended plugin. `plugin-market.test.cjs` holds the search response
 between pointerdown and pointerup to check this in Chromium and WebKit.
 
+### Codex keychain Make first
+
+A successful Providers → Codex → Make first action (`login/switch`) that
+changes the active keychain account opens an authorization dialog and posts
+`{user}` to `/api/codex/keychain/authorize`. The response must still name the
+selected account; a later switch does not authorize that other account.
+Success returns `{authorized:true}` after a saved-partition check and another
+Codex read.
+The dialog shows waiting, saved or unfinished authorization. Retry repeats
+only authorization; Cancel or Escape aborts its request and child process
+without undoing the switch. There is no separate account-level entry.
+File storage, an unchanged account, failed switches, other account actions
+and background changes do not open this dialog. See
+[Providers and accounts](providers-accounts.md#codex-keychain-access-after-make-first)
+for the signer, metadata helper and failure rules. The focused browser
+regression covers both engines, all five languages and narrow windows.
+`codex_keychain_authorize_test.go` covers the route and request cancellation.
+
 ## Verification
 
 The session readers include Cursor CLI chat stores, Cursor editor project

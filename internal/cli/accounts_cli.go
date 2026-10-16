@@ -27,6 +27,18 @@ import (
 // — the subscriptions magpie remembers, how much of each one's allowance is
 // used, and switching the agent between them.
 func accountsCmd(args []string) error {
+	if len(args) > 1 && args[1] == "keychain-metadata" {
+		// A fresh helper process avoids Security.framework's cached ACLs.
+		// It requests metadata only and never displays a password prompt.
+		if len(args) != 3 {
+			return fmt.Errorf("usage: magpie accounts keychain-metadata <codex-home>")
+		}
+		partitions, err := provider.CodexKeychainPartitions(args[2])
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(partitions)
+	}
 	if len(args) > 1 && args[1] == "discovery" {
 		return accountsDiscoveryCmd(args[2:])
 	}

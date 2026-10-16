@@ -231,6 +231,9 @@ func run(args []string) error {
 	if len(args) > 1 && (args[0] == "accounts" || args[0] == "account") && args[1] == "discovery" {
 		return accountsDiscoveryCmd(args[2:])
 	}
+	if len(args) > 1 && args[0] == "accounts" && args[1] == "keychain-metadata" {
+		return accountsCmd(args) // metadata only: no settings migration or plugin setup
+	}
 	// started by an update, the magpie it replaces goes first: the moves
 	// below write the files it may still be writing
 	update.AwaitPredecessor()

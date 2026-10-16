@@ -1964,6 +1964,18 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 		st.Moved = moved
 		writeJSON(rw, st)
 	})
+	mux.HandleFunc("POST /api/codex/keychain/authorize", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ User string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		if err := authorizeCodexKeychain(r.Context(), in.User); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, map[string]bool{"authorized": true})
+	})
 	// Codex's background app-server, left on the account before a switch
 	// or on the model list before a change (the Agents row's Restart):
 	// restarting it (Codex 0.162's sessions on it reconnect, after a turn
@@ -2215,6 +2227,10 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 		rw.WriteHeader(http.StatusNoContent)
 	})
 }
+
+// A var so route tests can hold an authorization and cancel its request
+// without starting the user's Codex or opening the system keychain.
+var authorizeCodexKeychain = provider.AuthorizeCodexKeychain
 
 // typed is the saved provider p as the editor's form has it (in), for
 // Refresh and Test models before a Save: a key pasted to replace the saved

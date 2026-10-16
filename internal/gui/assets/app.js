@@ -12789,6 +12789,67 @@ function renderCodexDaemon(user) {
   return box;
 }
 
+function codexKeychainHelp() {
+  return t("Magpie asks Codex to read its keychain sign-in after switching. If macOS asks for access to Codex Auth, choose Always Allow to save permission; Allow approves only that request. Later credential updates may require authorization again. A Codex app already running may still need to be quit and reopened to use the new account.");
+}
+
+// The switch has succeeded. Authorization is a separate request: its
+// refusal must not turn a completed switch into a reported switch failure.
+function showCodexKeychainHelp(user) {
+  if (document.querySelector(".codex-keychain-dialog")) return;
+  const dialog = el("dialog", "action-confirm codex-keychain-dialog");
+  dialog.setAttribute("aria-labelledby", "codexKeychainTitle");
+  dialog.setAttribute("aria-describedby", "codexKeychainMessage");
+  const title = el("h2", "", t("Authorize Codex after switching accounts")); title.id = "codexKeychainTitle";
+  const message = el("p", "", codexKeychainHelp()); message.id = "codexKeychainMessage";
+  const status = el("p", "hint"); status.setAttribute("role", "status");
+  const bar = el("div", "bar");
+  const retry = el("button", "text", t("Retry authorization")); retry.type = "button"; retry.hidden = true;
+  const ok = el("button", "text primary", t("Cancel")); ok.type = "button";
+  bar.append(el("span", "grow"), retry, ok);
+  dialog.append(title, message, status, bar);
+  const previousFocus = document.activeElement;
+  let request;
+  const close = () => {
+    request?.abort();
+    dialog.close(); dialog.remove();
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+  };
+  ok.onclick = close;
+  dialog.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+  dialog.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const buttons = retry.hidden ? [ok] : [retry, ok];
+      const at = buttons.indexOf(document.activeElement);
+      buttons[(at + (e.shiftKey ? buttons.length - 1 : 1)) % buttons.length].focus({ preventScroll: true });
+    }
+  });
+  const run = async () => {
+    request = new AbortController();
+    retry.hidden = true;
+    ok.textContent = t("Cancel");
+    status.textContent = t("Waiting for Codex authorization… Choose Always Allow in the macOS prompt.");
+    try {
+      const result = await api("codex/keychain/authorize", { user }, undefined, request.signal);
+      if (!dialog.isConnected) return;
+      if (!result?.authorized) throw new Error("authorization was not confirmed");
+      status.textContent = t("Codex's keychain permission is saved.");
+    } catch {
+      if (!dialog.isConnected) return;
+      status.textContent = t("Codex authorization did not finish. Retry, or quit and reopen Codex and choose Always Allow in its macOS prompt. The account switch is kept.");
+      retry.hidden = false;
+    }
+    ok.textContent = t("Got it");
+  };
+  retry.onclick = run;
+  document.body.append(dialog);
+  dialog.showModal();
+  ok.focus({ preventScroll: true });
+  run();
+}
+
 // renderCodexApp: the Codex desktop app reads the sign-in only when it
 // opens, so after a switch it stays on the account before (user): it shows
 // that account's limits and, once they are spent, sends in no thread. Only
@@ -13739,8 +13800,14 @@ async function accountAction(path, body, okMsg, confirmed = false) {
   if (!confirmed && (path === "login/forget" || path === "keys/remove") && !await confirmRemoval(body.user || key?.name || key?.masked || body.ref,
     "This account or key will stop being used for requests. You will need to add it again to use it.")) return false;
   try {
+    const wasCodex = providers?.providers?.find((p) => p.id === "codex" && p.account?.agent === "codex")?.account?.user;
     providers = await api(path, body);
     renderProviders();
+    const codex = providers?.providers?.find((p) => p.id === "codex" && p.account?.agent === "codex")?.account;
+    const changesCodex = body.agent === "codex" && path === "login/switch";
+    if (changesCodex && wasCodex &&
+      codex?.keychain && codex.user && body.user?.toLowerCase() === codex.user.toLowerCase() &&
+      wasCodex.toLowerCase() !== codex.user.toLowerCase()) showCodexKeychainHelp(codex.user);
     state = await api("state");
     renderAgents();
     saidMoved(okMsg);

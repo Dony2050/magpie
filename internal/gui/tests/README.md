@@ -1,5 +1,16 @@
 # Dropdown browser regression
 
+`codex-keychain-switch.test.cjs` checks #2367's Make first authorization:
+a successful Providers → Codex Make first action on the actual keychain
+backend starts the official Codex authorization request. It checks saved
+permission, failure without rolling back the switch, retry without switching
+twice and cancellation. File storage, failed or unchanged switches,
+reordering and the other account actions do not start authorization.
+A response naming an account other than the one selected does not start
+authorization. The 42 cases run in Chromium and WebKit; the main flow covers
+all five languages at 900px and 480px. Fixtures never access a live credential.
+Set `MAGPIE_APP_JS` to the pre-fix `app.js` to verify the regression fails.
+
 `settings-proxy-auth.test.cjs` checks optional SOCKS5/SOCKS5h usernames and
 passwords in Settings, using the real page with isolated API fixtures. It
 covers saving and reloading, escaped and non-UTF-8 credentials, masked

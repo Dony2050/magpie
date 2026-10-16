@@ -46,6 +46,9 @@ type Account struct {
 	Agent string `json:"agent"`          // the agent's id: codex, copilot
 	User  string `json:"user"`           // who is signed in: an email, a GitHub login
 	Plan  string `json:"plan,omitempty"` // the subscription, when the agent says
+	// Keychain is Codex's sign-in read from its macOS keychain item.
+	// Rewriting that item can make Codex need authorization again (#2367).
+	Keychain bool `json:"keychain,omitempty"`
 
 	// Stream is set when the backend only streams; magpie then translates
 	// a non-streaming request instead of relaying it.
@@ -1016,13 +1019,13 @@ func codexAccount(home string) (Provider, bool) {
 	dir := appdir.CodexHomeIn(home)
 	// where Codex's config.toml keeps it: auth.json, or the macOS
 	// keychain item (#2367)
-	b, _, err := readCodexLogin(dir, false)
+	b, store, err := readCodexLogin(dir, false)
 	var a codexAuth
 	if err != nil || json.Unmarshal(b, &a) != nil || a.Tokens.AccessToken == "" || a.AuthMode == "apikey" {
 		return Provider{}, false
 	}
 	id := jwtClaims(a.Tokens.IDToken)
-	acct := &Account{Agent: "codex", Stream: true,
+	acct := &Account{Agent: "codex", Stream: true, Keychain: store.keychain,
 		User: codexUser(id), Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type")}
 	if acct.User == "" {
 		acct.User = "ChatGPT"

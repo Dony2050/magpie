@@ -54,6 +54,32 @@ keys and accounts per request is in [Gateway routing and fallback](gateway-routi
 | Protocol detection | Works out which of Chat, Responses, Anthropic Messages and Gemini generateContent a base URL speaks when a provider is added. Each is asked at the URL as it takes it (`DetectBase`); Gemini's at the `…/v1beta` beside a typed `…/v1` or bare host, a Gemini model from the list picked for it, with the key in `x-goog-api-key` (#1346). Detection, endpoint tests and model tests share `probe`, which adds `anthropic-version` only for Anthropic Messages; OpenAI probes omit that default so a relay that refuses it can answer. User-supplied headers still apply through `Sign`. The editor asks with the form as it stands, before any Save (#1545): the URL, key and models typed (`picked`, else the saved picks, else the vendor list); a key not typed again is the saved provider's, or for an unsaved copy the copied one's (`copyOf`). The probe writes nothing and adds no provider, and the route stays behind `magpie web`'s key. | [`detect.go`](../../internal/provider/detect.go), [`test.go`](../../internal/provider/test.go) |
 | A pasted curl command | A curl command from a vendor's docs pasted into a custom provider's Base URL or API key fills the editor in (@mark_li21 on X). `curlOf` reads it as a shell would (lines joined by `\`, cmd's `^` or PowerShell's backtick; `curl.exe`; quotes and escapes), and takes: the API its URL's endpoint names (`…/chat/completions` Chat, `…/messages` Anthropic Messages, `…/responses` Responses) with the base URL before it, spelled as that API wants it (`respellURL`: Anthropic at its root, `/v1` after a bare host); the key from `Authorization: Bearer`, `x-api-key` or `api-key`, unless it only stands for one (`$OPENAI_API_KEY`, `${X}`, `%X%`, `<token>`, `YOUR_API_KEY`), when the key's box is left empty and focused; and the `model` of its JSON body, added to a new provider's models (a saved one's picks are left alone, since adding to none would narrow what it serves). A preset's editor takes only the key. A note (`editorError`, kind `note`) says what was taken, a placeholder like `{WorkspaceId}` left in the URL, and a URL with no known endpoint. Text that isn't a curl command pastes as before, several keys included. Tested on the docs' own examples (`fixtures/curl`). | [`app.js`](../../internal/gui/assets/app.js) (`curlOf`, `fromCurl`), [`provider-curl-paste.test.cjs`](../../internal/gui/tests/provider-curl-paste.test.cjs) |
 
+### Codex keychain access after Make first
+
+`codexAccount` carries the store returned by `readCodexLogin` as
+`Account.Keychain` (`keychain` in account JSON), without an extra read.
+Only a sign-in actually read from the macOS keychain sets it; file storage,
+`auto` falling back to a file and encrypted storage do not.
+
+After the Providers page's Codex Make first button successfully changes
+that keychain account through `login/switch`, its dialog calls
+`AuthorizeCodexKeychain`. The provider verifies the current installed
+Codex's OpenAI publisher signature and derives its team partition, then
+runs `login status` with the switched `CODEX_HOME` and no auth environment
+overrides. macOS owns the prompt; Always Allow saves permission. A fresh
+noninteractive `accounts keychain-metadata <codex-home>` helper checks the
+saved ACL before a new Codex process reads again. This internal helper
+runs before settings migration and needs macOS cgo support. An unavailable
+check remains unknown. Magpie collects no keychain password and edits no ACL.
+
+Authorization failure, refusal, cancellation or timeout keeps the completed
+switch. The dialog can retry only authorization or cancel it. One request
+runs at a time, bounded to two minutes, without holding credential locks.
+The account name is validated through `codexLiveName`, keeping two Team
+workspaces of one email distinct. Other account actions, CLI switches and
+background writes do not start this flow. Existing Codex app or daemon
+instances may still need a restart to load the changed account.
+
 ## Remote magpie
 
 The `remote-magpie` preset is of its own kind, `KindRemote` (`remote`), not
