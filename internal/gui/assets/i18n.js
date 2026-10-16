@@ -4,6 +4,7 @@
 // works. {name} slots are filled by t(str, vars).
 const I18N = {
   zh: {
+    "Waiting for authorization…": "等待授权…",
     "None": "无",
     "Prompt": "提示词",
     "Check again": "重新检测",
@@ -3662,6 +3663,7 @@ const I18N = {
     "Reading the reply": "读取回复",
   },
   "zh-TW": {
+    "Waiting for authorization…": "等待授權…",
     "None": "無",
     "Prompt": "提示詞",
     "Check again": "重新檢測",
@@ -7305,6 +7307,7 @@ const I18N = {
     "Reading the reply": "讀取回覆",
   },
   ja: {
+    "Waiting for authorization…": "認証を待っています…",
     "None": "なし",
     "Prompt": "プロンプト",
     "Check again": "再確認",
@@ -10950,6 +10953,7 @@ const I18N = {
     "Reading the reply": "応答の読み取り",
   },
   de: {
+    "Waiting for authorization…": "Warten auf Erlaubnis…",
     "None": "Keine",
     "Prompt": "Prompt",
     "Check again": "Erneut prüfen",

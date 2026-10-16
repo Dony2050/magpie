@@ -467,3 +467,12 @@ still follows the existing Not set up folding rules. The dialog explains that
 restoring visibility does not pin an unconfigured agent into the main list.
 See `agent-bulk-visibility.test.cjs` for persistence, partial selection, failed
 saves, narrow layouts and all five languages in Chromium and WebKit.
+
+### Codex keychain authorization
+
+The saved-accounts notice places Try again beside its title. During an
+explicit retry, or while `Exclusion.KeychainWaiting` is true, the link is
+disabled and says Waiting for authorization. Providers polls the current
+read through its existing GET, without posting another retry or redrawing
+an open editor. The read may outlive the request's five-second hold;
+`provider/keychain-retry` still joins the one ask in flight.

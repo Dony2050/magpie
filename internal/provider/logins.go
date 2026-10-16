@@ -621,7 +621,9 @@ func savedButSignedOut() []Exclusion {
 			n = fmt.Sprintf("%d accounts are", saved[a])
 		}
 		_, _, err := readCodexLogin(codexHome(), false)
-		out = append(out, Exclusion{Agent: a, SignedOut: true, Users: users[a], Retry: codexKeychainUnread(err),
+		var se *codexStoreError
+		waiting := errors.As(err, &se) && errors.Is(se.Cause, errKeychainWaiting)
+		out = append(out, Exclusion{Agent: a, SignedOut: true, Users: users[a], Retry: codexKeychainUnread(err), KeychainWaiting: waiting,
 			Why: fmt.Sprintf("%s saved in magpie, and they are only offered beside the account Codex is signed in to. %s", n, codexSignedOutWhy())})
 	}
 	return out
@@ -647,7 +649,11 @@ func codexSignedOutWhy() string {
 	case se.Setting.Mode == "ephemeral":
 		return se.Error() + ". Set cli_auth_credentials_store = \"file\" there and sign in again (codex login)."
 	case se.Cause != nil:
-		return se.Error() + ". Allow magpie when macOS asks for the keychain (\"Always Allow\" lets /usr/bin/security read that item from then on, so macOS stops asking each time Codex changes it), or set cli_auth_credentials_store = \"file\" there and sign in again (codex login)."
+		paused := ""
+		if !errors.Is(se.Cause, errKeychainWaiting) {
+			paused = ". Automatic retries are paused until you choose Try again or restart magpie"
+		}
+		return se.Error() + paused + ". Allow magpie when macOS asks for the keychain (\"Always Allow\" lets /usr/bin/security read that item from then on, so macOS stops asking each time Codex changes it), or set cli_auth_credentials_store = \"file\" there and sign in again (codex login)."
 	}
 	return se.Error() + fmt.Sprintf(": here it reads only %s. Set cli_auth_credentials_store = \"file\" there and sign in again (codex login).", codexAuthPath())
 }

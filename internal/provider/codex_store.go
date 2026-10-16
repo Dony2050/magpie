@@ -274,9 +274,9 @@ func (s codexStore) file() string { return filepath.Join(s.home, "auth.json") }
 // after codexKeychainCheck its modification date is looked at again
 // (Stat, no prompt), and the secret is read again only when that moved,
 // so an Allow given once isn't asked for again at the next poll (#2367).
-// A refusal, or a prompt with no answer, is kept 10 minutes, so that a
-// prompt isn't put up again at once (as Copilot's, copilotSecret), or
-// until Try again (RetryCodexKeychain).
+// A failed access stays paused for this process until Try again
+// (RetryCodexKeychain). Neither a timer nor a fresh token read may
+// undo a refusal.
 //
 // codexKeychainMu guards the maps only; no `security` runs under it. One
 // read of the secret at a time per item (codexKeychainAsks): two at once
@@ -307,10 +307,7 @@ type codexKeychainAsk struct {
 	err   error
 }
 
-const (
-	codexKeychainCheck   = 10 * time.Second
-	codexKeychainRefused = 10 * time.Minute
-)
+const codexKeychainCheck = 10 * time.Second
 
 // keychainHold is how long a reader waits on a read of the secret in
 // flight, counted from when the read began: one with no prompt is done
@@ -319,8 +316,8 @@ const (
 var keychainHold = 5 * time.Second
 
 // findCodexKeychain reads the item for home; fresh looks at the item now,
-// for a read whose tokens will be spent or saved, and asks again after a
-// refusal.
+// for a read whose tokens will be spent or saved. A failure stays paused
+// until the user's explicit RetryCodexKeychain.
 func findCodexKeychain(home string, fresh bool) ([]byte, error) {
 	account := codexKeychainAccount(home)
 	now := time.Now()
@@ -345,11 +342,8 @@ func findCodexKeychain(home string, fresh bool) ([]byte, error) {
 		}
 		kept = false
 	default:
-		if !fresh && now.Sub(r.at) < codexKeychainRefused {
-			codexKeychainMu.Unlock()
-			return nil, r.err
-		}
-		kept = false
+		codexKeychainMu.Unlock()
+		return nil, r.err
 	}
 	gen := codexKeychainGen
 	codexKeychainMu.Unlock()
@@ -447,6 +441,12 @@ func keepCodexKeychain(home string, b []byte) {
 	}
 	now := time.Now()
 	codexKeychainMu.Lock()
+	// A refresh begun before a refused read may finish after it. Its
+	// write isn't permission to undo the user's refusal.
+	if r, ok := codexKeychainCache[account]; ok && r.err != nil && !errors.Is(r.err, fs.ErrNotExist) {
+		codexKeychainMu.Unlock()
+		return
+	}
 	codexKeychainCache[account] = codexKeychainRead{b: b, mdat: mdat, at: now, checked: now}
 	codexKeychainMu.Unlock()
 }
@@ -481,13 +481,32 @@ func resetCodexKeychain() {
 
 // RetryCodexKeychain is Try again beside a sign-in the keychain didn't
 // give (#2367): Codex's item is read once, now, past a refusal or a
-// prompt with no answer kept (a fresh read), and what it gets is kept in
-// their place. It gives what that read gave: errKeychainWaiting while the
-// prompt is up (joining it, never a second one), its answer kept when it
-// comes.
+// prompt with no answer kept. Only this action clears that item's failed
+// read; an ordinary fresh read leaves it paused. While the prompt is up
+// it gives errKeychainWaiting, joining the ask rather than starting a
+// second one. Its answer is kept when it comes.
 func RetryCodexKeychain() error {
+	if discoveryOff() {
+		return errAccountDiscoveryOff
+	}
+	home := codexHome()
+	s, err := readCodexStoreSetting(home)
+	if err != nil {
+		return err
+	}
+	if !s.keychainItem() {
+		return errors.New("Codex isn't using a macOS keychain item magpie can read")
+	}
+	// Only this explicit action drops the current item's failure. A
+	// concurrent retry joins its ask; other homes keep their refusals.
+	account := codexKeychainAccount(home)
+	codexKeychainMu.Lock()
+	if r, ok := codexKeychainCache[account]; ok && r.err != nil {
+		delete(codexKeychainCache, account)
+	}
+	codexKeychainMu.Unlock()
 	defer ForgetAccounts()
-	_, _, err := readCodexLogin(codexHome(), true)
+	_, _, err = readCodexLogin(home, true)
 	var se *codexStoreError
 	if errors.As(err, &se) && se.Cause != nil {
 		return se.Cause
@@ -503,9 +522,7 @@ func RetryCodexKeychain() error {
 // can help.
 func codexKeychainUnread(err error) bool {
 	var se *codexStoreError
-	return errors.As(err, &se) && se.Setting.keychainItem() &&
-		(errors.Is(se.Cause, errKeychainRefused) || errors.Is(se.Cause, errKeychainNoAnswer) ||
-			errors.Is(se.Cause, errKeychainWaiting) || errors.Is(se.Cause, errKeychainUnread))
+	return errors.As(err, &se) && se.Setting.keychainItem() && se.Cause != nil && !errors.Is(se.Cause, fs.ErrNotExist)
 }
 
 // readCodexLogin is Codex's sign-in under home as Codex would load it,

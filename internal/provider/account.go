@@ -319,6 +319,9 @@ type Exclusion struct {
 	// answer, or its prompt still up); Try again asks it once more
 	// (RetryCodexKeychain, #2367).
 	Retry bool `json:"retry,omitempty"`
+	// KeychainWaiting: its one read is still waiting for the user's
+	// answer. Poll its result, without offering a second Retry.
+	KeychainWaiting bool `json:"keychainWaiting,omitempty"`
 }
 
 // Excluded lists sign-ins magpie detects but leaves out: the accounts the

@@ -14,11 +14,11 @@ const { chromium, webkit } = require("playwright");
 const assets = path.resolve(__dirname, "../assets");
 const why = "1 account is saved in magpie, and they are only offered beside the account Codex is signed in to. Codex keeps its sign-in in the macOS keychain (cli_auth_credentials_store = \"auto\" in /Users/me/.codex/config.toml), and macOS's keychain prompt was denied or cancelled. Allow magpie when macOS asks for the keychain (\"Always Allow\" lets /usr/bin/security read that item from then on, so macOS stops asking each time Codex changes it), or set cli_auth_credentials_store = \"file\" there and sign in again (codex login).";
 
-function serve(lang, posts, retry) {
+function serve(lang, posts, retry, control = {}) {
   let read = false;
   const providers = () => ({
-    providers: [], presets: [], gateway: { running: true, window: true },
-    excluded: read ? [] : [{ agent: "codex", agentName: "Codex", agentIcon: "codex-color", signedOut: true, why, users: ["me@example.com"], retry }],
+    providers: control.existing ? [{ id: "demo", name: "Demo", icon: "generic", host: "api.example.com", chat: "https://api.example.com/v1", models: [], agents: [], fallback: [], headers: {}, key: { set: true, masked: "sk-…demo" }, keyList: [], balanceToken: { takes: false, set: false }, proxy: "" }] : [], presets: [], gateway: { running: true, window: true },
+    excluded: read || control.read ? [] : [{ agent: "codex", agentName: "Codex", agentIcon: "codex-color", signedOut: true, why, users: ["me@example.com"], retry, keychainWaiting: !!control.waiting }],
   });
   const state = { agents: [], profiles: [], settings: { lang, theme: "light" } };
   return async (route) => {
@@ -32,6 +32,12 @@ function serve(lang, posts, retry) {
     if (url.pathname === "/api/plugins") return json({ plugins: [] });
     if (route.request().method() === "POST") {
       posts.push({ path: url.pathname, body: route.request().postDataJSON() });
+      if (control.denied) return route.fulfill({ status: 400, json: { error: "macOS's keychain prompt was denied or cancelled" } });
+      if (control.hold) {
+        control.waiting = true;
+        await control.hold;
+        return route.fulfill({ status: 400, json: { error: "magpie is waiting for an answer to macOS's keychain prompt" } });
+      }
       if (url.pathname === "/api/provider/keychain-retry") read = true;
       return json(providers());
     }
@@ -42,10 +48,81 @@ function serve(lang, posts, retry) {
   };
 }
 
+const waitingWords = {
+  en: "Waiting for authorization…", zh: "等待授权…", "zh-TW": "等待授權…",
+  ja: "認証を待っています…", de: "Warten auf Erlaubnis…",
+};
+
+for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
+  for (const lang of Object.keys(waitingWords)) {
+    for (const width of [390, 1100]) {
+      test(`${engine} ${lang} ${width}: keychain retry waits once and observes its answer`, async (t) => {
+        const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+        t.after(() => browser.close());
+        const page = await (await browser.newContext({ viewport: { width, height: 760 }, reducedMotion: "reduce" })).newPage();
+        page.setDefaultTimeout(10000);
+        const posts = [], errors = [];
+        let answer;
+        // A normal Providers list, with no Add sheet open: that sheet
+        // deliberately pauses background redraws while the user edits.
+        const control = { existing: true, hold: new Promise((resolve) => { answer = resolve; }) };
+        t.after(answer);
+        page.on("pageerror", (e) => errors.push(e.message));
+        await page.route("**/*", serve(lang, posts, true, control));
+        await page.goto("http://magpie.test/?view=providers");
+        const line = page.locator("#excluded .excluded").first();
+        await line.waitFor();
+        const again = () => line.getByRole("button").first();
+        assert.equal(await again().evaluate((b) => b.previousSibling?.nodeName), "B", "retry belongs beside the notice title");
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "notice fits the window");
+        if (process.env.KEYCHAIN_RETRY_PREVIEW && engine === "chromium" && lang === "zh" && width === 1100) {
+          await line.screenshot({ path: process.env.KEYCHAIN_RETRY_PREVIEW });
+        }
+        await again().click();
+        await page.waitForFunction((word) => document.querySelector("#excluded button")?.textContent === word, waitingWords[lang]);
+        assert.equal(await again().isDisabled(), true);
+        await again().evaluate((b) => b.click());
+        assert.equal(posts.length, 1, "a second click must not ask again");
+        const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/providers");
+        answer();
+        await refreshed;
+        assert.equal(await again().isDisabled(), true, "a waiting response stays disabled");
+        control.read = true;
+        await line.waitFor({ state: "detached", timeout: 20000 });
+        assert.deepEqual(posts, [{ path: "/api/provider/keychain-retry", body: {} }]);
+        assert.deepEqual(errors, []);
+      });
+    }
+  }
+}
+
 const words = {
   en: { line: "Codex's saved accounts aren't offered.", again: "Try again", remove: "Remove", title: "Ask the macOS keychain for Codex's sign-in again", done: "Codex's sign-in was read from the keychain" },
   zh: { line: "Codex 保存的账号没有提供出来。", again: "重试", remove: "移除", title: "再向 macOS 钥匙串读取 Codex 的登录", done: "已从钥匙串读到 Codex 的登录" },
 };
+
+for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
+  for (const lang of ["en", "zh"]) {
+    test(`${engine} ${lang}: a denied retry stays available without asking again`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const page = await (await browser.newContext({ viewport: { width: 900, height: 760 }, reducedMotion: "reduce" })).newPage();
+      const posts = [], errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.route("**/*", serve(lang, posts, true, { existing: true, denied: true }));
+      await page.goto("http://magpie.test/?view=providers");
+      const again = page.locator("#excluded").getByRole("button", { name: words[lang].again, exact: true });
+      await again.click();
+      await page.waitForFunction(() => document.querySelector("#excluded button")?.disabled === false);
+      await page.waitForTimeout(3000); // beyond Providers' 2500ms polling interval
+      assert.equal(posts.length, 1, "a refusal must not post another retry");
+      await again.click();
+      await page.waitForFunction(() => document.querySelector("#excluded button")?.disabled === false);
+      assert.equal(posts.length, 2, "a new explicit click is still possible");
+      assert.deepEqual(errors, []);
+    });
+  }
+}
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {

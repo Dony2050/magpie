@@ -57,6 +57,7 @@ if (window.bootPrefs) setLocale(window.bootPrefs.lang);
 let state = { agents: [], profiles: [], catalog: "", settings: {} };
 let prefs = null; // the settings page: theme, lang, version, dir, gateway
 let providers = null; // { providers, presets, gateway }
+let codexKeychainRetrying = false;
 let view = "agents";
 let showAllAgents = false; // the agents no one has set anything on, folded away
 let showHiddenAgents = false; // under them, the ones hidden by hand: a fold of their own, shut until asked
@@ -5515,7 +5516,7 @@ async function loadProviders() {
 // the asking: this timer is what brings the lists in.
 function providersWhileFetching() {
   clearTimeout(providersWhileFetching.timer);
-  if (!providers?.fetching) return;
+  if (!providers?.fetching && !providers?.excluded?.some((x) => x.keychainWaiting)) return;
   providersWhileFetching.timer = setTimeout(async () => {
     if (!(["providers", "routing"].includes(view) || providersPage(view)) || editing !== null || adding || document.hidden) return;
     let next;
@@ -6029,7 +6030,17 @@ function renderExcluded() {
     if (x.quiet) continue; // dismissed: the Add sheet offers it back (#116)
     const r = el("div", "excluded");
     r.append(icon(x.agentIcon), el("span", "", ""));
-    r.lastChild.append(el("b", "", t(x.signedOut ? "{agent}'s saved accounts aren't offered. " : "{agent} is signed in, but stays out of this list. ", { agent: x.agentName })), x.signedOut ? x.why : t(x.why));
+    const text = r.lastChild;
+    text.append(el("b", "", t(x.signedOut ? "{agent}'s saved accounts aren't offered. " : "{agent} is signed in, but stays out of this list. ", { agent: x.agentName })));
+    if (x.retry) {
+      const waiting = codexKeychainRetrying || x.keychainWaiting;
+      const again = el("button", "link", t(waiting ? "Waiting for authorization…" : "Try again"));
+      again.disabled = !!waiting;
+      again.title = t("Ask the macOS keychain for {agent}'s sign-in again", { agent: x.agentName });
+      again.onclick = retryCodexKeychain;
+      text.append(again, " ");
+    }
+    text.append(x.signedOut ? x.why : t(x.why));
     if (x.provider) {
       const back = el("button", "link", t("Add it back"));
       back.onclick = () => providerAction("show", { id: x.provider }, t("{name} added back", { name: x.agentName }));
@@ -6043,14 +6054,6 @@ function renderExcluded() {
     }
     // an agent signed out here (a banned account logged out, say) lists
     // its saved accounts nowhere else, so this is where they are removed
-    // the keychain didn't give Codex's sign-in (#2367): read it once more,
-    // the refusal magpie kept dropped, rather than wait it out or restart
-    if (x.retry) {
-      const again = el("button", "link", t("Try again"));
-      again.title = t("Ask the macOS keychain for {agent}'s sign-in again", { agent: x.agentName });
-      again.onclick = () => providerAction("keychain-retry", {}, t("{agent}'s sign-in was read from the keychain", { agent: x.agentName }));
-      r.lastChild.append(" ", again);
-    }
     if (x.signedOut && x.users?.length) {
       const rm = el("button", "link", t("Remove"));
       rm.title = t("magpie forgets the accounts it saved; {agent}'s own files are left as they are", { agent: x.agentName });
@@ -6058,6 +6061,20 @@ function renderExcluded() {
       r.lastChild.append(x.retry ? " · " : " ", rm);
     }
     box.append(r);
+  }
+}
+
+async function retryCodexKeychain() {
+  if (codexKeychainRetrying) return;
+  codexKeychainRetrying = true;
+  renderExcluded();
+  try {
+    await providerAction("keychain-retry", {}, t("{agent}'s sign-in was read from the keychain", { agent: "Codex" }));
+  } finally {
+    codexKeychainRetrying = false;
+    // The read can outlive this request's five-second hold. Observe its
+    // result through Providers; only an explicit click posts a retry.
+    try { await loadProviders(); } catch { renderExcluded(); }
   }
 }
 

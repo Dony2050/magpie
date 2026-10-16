@@ -348,7 +348,7 @@ func TestCodexStoreNotReadIsLeftAlone(t *testing.T) {
 // Reading the secret may put a prompt in front of the user: reads close
 // together ask once, a read kept is checked by the item's date (no
 // prompt) and not asked again while that is unchanged, and a refusal
-// isn't asked again for minutes, a look at the accounts afresh
+// stays paused until explicit retry, a look at the accounts afresh
 // (forgetCodexKeychain) included (#2367: with a one-time Allow, Dony2050
 // was asked again every half minute).
 func TestCodexKeychainAskedSeldom(t *testing.T) {
